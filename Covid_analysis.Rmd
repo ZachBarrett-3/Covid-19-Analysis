@@ -1,0 +1,199 @@
+---
+title: "Covid-19 Data Analysis"
+author: "Zach Barrett"
+output: html_document
+---
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include = FALSE, warning=FALSE, message=FALSE}
+#load our data, make some initial adjustments
+StateSummary <- data.frame(read.csv("JHCovidData.csv", header = TRUE ))
+DetailedData <- data.frame(read.csv("JHCovidUS.csv", header = TRUE))
+Census <- data.frame(read.csv("Census.csv", header = TRUE))
+colnames(Census)[5] <- "Province_State"
+```
+
+## Case Fatality Rates
+
+```{r, warning=FALSE, message=FALSE}
+library(usmap)
+library(ggplot2)
+df <- StateSummary
+colnames(df)[1] <- "state"
+
+plot_usmap(data=df, values = "Case_Fatality_Ratio", color = "black")+
+  scale_fill_continuous(
+    low = "yellow", high = "red", name = "Case Fatality Ratio", label = scales::comma)+ 
+  theme(legend.position = "right")+
+  labs(title = "COVID-19 Case Fatality Rates")
+```
+
+# Population Density and Case Fatality Rates
+
+```{r, warning=FALSE, message=FALSE}
+library(usmap)
+library(ggplot2)
+require(gridExtra)
+df <- StateSummary
+colnames(df)[1] <- "state"
+pop <- merge(x = StateSummary, y = Census, by = "Province_State")
+colnames(pop)[1] <- "state"
+pop$popDensity <-(pop$POPESTIMATE2019/pop$LandArea)
+
+#Plot for Case Fatality Ratio
+plot1 <- plot_usmap(data=df, values = "Case_Fatality_Ratio", color = "black")+
+  scale_fill_continuous(
+    low = "yellow", high = "red", name = "Case Fatality Ratio", label = scales::comma, limits=c(1.55,3))+ 
+  theme(legend.position = "right")+
+  labs(title = "COVID-19 Case Fatality Rates")
+
+#Plot for Population Density
+plot2 <- plot_usmap(data=pop, values = "popDensity", color = "black")+
+  scale_fill_continuous(
+    low = "pink", high = "purple", name = "People per square mi.", label = scales::comma, limits=c(90,1200))+
+  theme(legend.position = "right")+
+  labs(title = "Population Density")
+
+grid.arrange(plot1, plot2, ncol=2)
+```
+
+# Is the above observation statistically significant?
+
+```{r, warning=FALSE, message=FALSE}
+df <- pop[is.finite(pop$popDensity),]
+cor.test(df$popDensity, df$Case_Fatality_Ratio, use = "complete.obs")
+```
+# Hospital Beds and Case Fatality Rates
+
+```{r, warning=FALSE, message=FALSE}
+library(usmap)
+library(ggplot2)
+require(gridExtra)
+df <- StateSummary
+colnames(df)[1] <- "state"
+pop <- merge(x = StateSummary, y = Census, by = "Province_State")
+colnames(pop)[1] <- "state"
+pop$bedsDensity <-(pop$StaffedBeds/pop$POPESTIMATE2019)
+
+#Plot for Case Fatality Ratio
+plot1 <- plot_usmap(data=df, values = "Case_Fatality_Ratio", color = "black")+
+  scale_fill_continuous(
+    low = "yellow", high = "red", name = "Case Fatality Ratio", label = scales::comma, limits=c(1.65,3))+
+  theme(legend.position = "right")+
+  labs(title = "COVID-19 Fatality Rates")
+
+#Plot for Hospital Beds relative to population
+plot2 <- plot_usmap(data=pop, values = "bedsDensity", color = "black")+
+  scale_fill_continuous(
+    low = "pink", high = "purple", name = "Beds per person", label = scales::comma, limits=c(.0025,.0035))+
+  theme(legend.position = "right")+
+  labs(title = "Total Hospital Beds per person")
+
+grid.arrange(plot1, plot2, ncol=2)
+```
+
+# Is the above observation statistically significant?
+
+```{r, warning=FALSE, message=FALSE}
+cor.test(pop$bedsDensity, df$Case_Fatality_Ratio, use = "complete.obs")
+```
+
+# Covid-19 care by region
+
+```{r, warning=FALSE, message=FALSE}
+library(plotly)
+library(ggplot2)
+Census$REGION[which(Census$REGION == 1)] = "Northeast Region"
+Census$REGION[which(Census$REGION == 2)] = "Midwest Region"
+Census$REGION[which(Census$REGION == 3)] = "South Region"
+Census$REGION[which(Census$REGION == 4)] = "West Region"
+df <- merge(x = StateSummary, y = Census, by = "Province_State")
+stored <- select(df, c("Province_State", "Deaths", "Confirmed", "POPESTIMATE2019", "REGION"))
+stored <- filter(stored, REGION != "X")
+stored$Death_By_Pop <- ((stored$Deaths)/(stored$POPESTIMATE2019)*1000)
+stored$Cases_By_Pop <- ((stored$Confirmed)/(stored$POPESTIMATE2019)*1000)
+
+p <-ggplot(stored, aes(x=Cases_By_Pop, y=Death_By_Pop, color = REGION))+
+  geom_point()+
+  geom_smooth(method=lm)+
+  labs(title = "US COVID-19 Death and Case Rates by Region",
+       x = "Cases per 1,000 people",
+       y = "Deaths per 1,000 people")
+
+ggplotly(p)
+```
+
+# Testing Rate and Death Rate
+
+```{r, warning=FALSE, message=FALSE}
+library(plotly)
+
+names <- c("Rhode Island", "Massachusetts", "Alaska","New York","Vermont","District of Columbia","Illinois","North Dakota","Delaware","California","Maryland","New Mexico","West Virginia","Maine","Minnesota","Louisiana","Indiana","Colorado","Nebraska","New Jersey","Wisconsin","New Hampshire","Arizona","Wyoming","Montana","Michigan","Hawaii","South Carolina","Tennessee","Nevada","Ohio","Pennsylvania","Washington","Utah","Arkansas","Florida","Oklahoma","Missouri","Texas","Virginia","South Dakota","Georgia","Mississippi","Alabama","Kansas","Iowa","Idaho")
+
+df <- merge(x = StateSummary, y = Census, by = "Province_State")
+store <- select(df, c("Province_State", "Deaths", "Confirmed","Total_Test_Results", "POPESTIMATE2019"))
+store <- filter(store, Province_State %in% names)
+store$Death_By_Pop <- round(((store$Deaths/store$POPESTIMATE2019)), digits = 7)*1000
+store$Tests_By_Pop <- round(((store$Total_Test_Results/store$POPESTIMATE2019)), digits = 5)*1000
+store$Confirmed_By_Pop <- round(((store$Confirmed/store$POPESTIMATE2019)), digits = 5)*1000
+store$Province_State <- factor(store$Province_State, levels = names)
+store <- store[!(store$Province_State %in% c("Puerto Rico")), ]
+
+plot_ly(store, x= ~Province_State, y= ~Tests_By_Pop, type = 'bar', name= 'Covid-19 Testing Rate') %>% 
+  add_trace(x= ~Province_State, y= ~Death_By_Pop, mode = "markers", type = "scatter", yaxis = "y2", name = 'Covid-19 Death Rate') %>% 
+  layout(
+    title = "COVID-19 Testing and Death Rates by State", 
+    xaxis = list(title = "State"), 
+    yaxis = list(title = "Covid Testing Rate (per 1,000)", range = c(0, max(store$Tests_By_Pop, na.rm = TRUE)*1.05)),
+    yaxis2 = list(
+      title = "Death Rate (per 1,000)", 
+      side = "right",
+      overlaying = "y",
+      showgrid = FALSE,
+      range = c(0, max(store$Death_By_Pop, na.rm = TRUE)*1.05)
+    )
+  )
+```
+
+# Is the above observation statistically significant?
+
+```{r, warning=FALSE, message=FALSE}
+cor.test(store$Tests_By_Pop, store$Death_By_Pop)
+```
+
+# Testing rate and case rate
+
+```{r, warning=FALSE, message=FALSE}
+plot_ly(store, x= ~Province_State, y= ~Tests_By_Pop, type = 'bar', name= 'Covid-19 Testing Rate') %>% 
+  add_trace(x= ~Province_State, y= ~Confirmed_By_Pop, mode = "markers", type = "scatter", yaxis = "y2", name = 'Covid-19 Case Rate') %>% 
+  layout(
+    title = "COVID-19 Testing and Case Rates by State", 
+    xaxis = list(title = "State"), 
+    yaxis = list(title = "Covid Testing Rate (per 1,000)", range = c(0, max(store$Tests_By_Pop, na.rm = TRUE)*1.05)),
+    yaxis2 = list(
+      title = "Case Rate (per 1,000)", 
+      side = "right",
+      overlaying = "y",
+      showgrid = FALSE,
+      range = c(0, max(store$Confirmed_By_Pop, na.rm = TRUE)*1.05)
+    )
+  )
+
+```
+
+# Is the above observation statistically significant?
+
+```{r, warning=FALSE, message=FALSE}
+cor.test(store$Tests_By_Pop, store$Confirmed_By_Pop)
+
+# Does removing Hawaii improve our p-value?
+store1 <- store[!(store$Province_State %in% c("Hawaii")), ]
+cor.test(store1$Tests_By_Pop, store1$Confirmed_By_Pop, alternative = 'less')
+```
+
+
+
+
+
